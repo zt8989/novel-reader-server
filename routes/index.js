@@ -12,7 +12,7 @@ const wrap = func => async (req, res, next) => {
   }
 }
 
-router.get("/status", function(){
+router.get("/status", function(req, res){
   res.json({ code: 200, data: {} })
 })
 
