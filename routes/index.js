@@ -82,7 +82,7 @@ router.post('/books/sync', wrap(async function(req, res, next) {
     return book && (new Date(x.updatedAt).getTime()) > book.updatedAt.getTime()
   })
 
-  const deletes = books.filter(b => !data.some(x => x.name === b.name))
+  // const deletes = books.filter(b => !data.some(x => x.name === b.name))
 
   for (let book of inserts) {
     const { name, lastUrl } = book 
@@ -95,7 +95,7 @@ router.post('/books/sync', wrap(async function(req, res, next) {
     await db.books.update({ userId: req.user._id, name }, { $set: { lastUrl } })
   }
 
-  await db.books.remove({ _id: { $in: deletes.map(x => x._id) }}, { multi: true });
+  // await db.books.remove({ _id: { $in: deletes.map(x => x._id) }}, { multi: true });
 
   books = await db.books.find({ userId: req.user._id })
 
