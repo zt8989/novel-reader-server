@@ -12,6 +12,10 @@ const wrap = func => async (req, res, next) => {
   }
 }
 
+router.get("/status", function(){
+  res.json({ code: 200, data: {} })
+})
+
 /* login */
 router.post('/login', wrap(async function(req, res, next) {
   let user = await db.users.findOne({ username: req.body.username, password: req.body.password })
@@ -35,24 +39,97 @@ router.post('/register', wrap(async function(req, res, next) {
 }));
 
 /* get books */
-router.get('/books', wrap(async function(req, res, next) {
-  let books = await db.books.findOne({ userId: req.user._id })
-  res.json({ code: 200, data: books ? books.list : [] })
+router.get('/books/list', wrap(async function(req, res, next) {
+  let books = await db.books.find({ userId: req.user._id })
+  res.json({ code: 200, data: books })
 }));
 
 /* set books */
+router.get('/books', wrap(async function(req, res, next) {
+  const book = await db.books.findOne({ userId: req.user._id, name: req.query.name })
+  res.json({ code: 200, data: book })
+}));
+
 router.post('/books', wrap(async function(req, res, next) {
-  let books = await db.books.findOne({ userId: req.user._id })
+  const data = req.body
+  if(data.name && data.lastUrl && data.lastUrl.startsWith("http")) {
+    const book = await db.books.findOne({ userId: req.user._id, name: req.body.name })
+    if (book) {
+      await db.books.update({ _id: book._id }, { $set: { lastUrl: data.lastUrl } })
+    } else {
+      await db.books.insert({ userId: req.user._id, name: data.name, lastUrl: data.lastUrl })
+    }
+    res.json({ code: 200, data: {} })
+  } else {
+    res.json({ code: 500, message: "参数错误", data: {} })
+  }
+}));
+
+// 同步，更新，插入，删除
+router.post('/books/sync', wrap(async function(req, res, next) {
+  const data = Array.isArray(req.body) ? req.body.map(x => ({ name: x.name, lastUrl: x.lastUrl, updatedAt: x.updatedAt })) : []
+  if (!data.every(x => x.name && x.lastUrl && x.lastUrl.startsWith("http"))) {
+    res.json({ code: ERROR_CODES.BOOKS_FIELDS, message: ERROR_MESSAGE[ERROR_CODES.BOOKS_FIELDS] })
+    return
+  }
+
+  let books = await db.books.find({ userId: req.user._id })
+
+  const inserts = data.filter(x => !books.some(b => b.name === x.name))
+
+  const updates = data.filter(x => {
+    const book = books.find(b => b.name === x.name)
+    return book && (new Date(x.updatedAt).getTime()) > book.updatedAt.getTime()
+  })
+
+  const deletes = books.filter(b => !data.some(x => x.name === b.name))
+
+  for (let book of inserts) {
+    const { name, lastUrl } = book 
+    await db.books.insert({ userId: req.user._id, name, lastUrl })
+  }
+
+
+  for (let book of updates) {
+    const { name, lastUrl } = book 
+    await db.books.update({ userId: req.user._id, name }, { $set: { lastUrl } })
+  }
+
+  await db.books.remove({ _id: { $in: deletes.map(x => x._id) }}, { multi: true });
+
+  books = await db.books.find({ userId: req.user._id })
+
+  res.json({ code: 200, data: books })
+}));
+
+router.delete('/books', wrap(async function(req, res, next) {
+  const data = req.body
+  if(data.name) {
+    const del = await db.books.remove({ name: req.body.name })
+    res.json({ code: 200, data: del })
+  } else {
+    res.json({ code: 500, message: "参数错误", data: {} })
+  }
+}));
+
+/* set books */
+router.post('/books/list', wrap(async function(req, res, next) {
   const data = Array.isArray(req.body) ? req.body.map(x => ({ name: x.name, lastUrl: x.lastUrl })) : []
   if (!data.every(x => x.name && x.lastUrl && x.lastUrl.startsWith("http"))) {
     res.json({ code: ERROR_CODES.BOOKS_FIELDS, message: ERROR_MESSAGE[ERROR_CODES.BOOKS_FIELDS] })
     return
   }
-  if (books) {
-    await db.books.update({ userId: req.user._id }, { $set: { list: data }})
-  } else {
-    await db.books.insert({ userId: req.user._id, list: data })
+
+  await db.books.remove({ userId: req.user._id }, { multi: true })
+
+  const inserts = data.map(x => {
+    return { userId: req.user._id, name: x.name, lastUrl: x.lastUrl }
+  })
+
+  for (let book of inserts) {
+    await db.books.insert(book)
   }
+
   res.json({ code: 200, data: {} })
 }));
 
