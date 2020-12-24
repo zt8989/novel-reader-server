@@ -57,7 +57,7 @@ router.post('/books', wrap(async function(req, res, next) {
     if (book) {
       await db.books.update({ _id: book._id }, { $set: { lastUrl: data.lastUrl } })
     } else {
-      await db.books.insert({ userId: req.user._id, name: data.name, lastUrl: data.lastUrl })
+      await db.books.insert({ userId: req.user._id, name: data.name, lastUrl: data.lastUrl, deleted: false })
     }
     res.json({ code: 200, data: {} })
   } else {
@@ -67,12 +67,14 @@ router.post('/books', wrap(async function(req, res, next) {
 
 // 同步，更新，插入，删除
 router.post('/books/sync', wrap(async function(req, res, next) {
-  const data = Array.isArray(req.body) ? req.body.map(x => ({ name: x.name, lastUrl: x.lastUrl, updatedAt: x.updatedAt })) : []
+  let data = Array.isArray(req.body) ? req.body.map(x => ({ name: x.name, lastUrl: x.lastUrl, updatedAt: x.updatedAt, deleted: x.deleted })) : []
   if (!data.every(x => x.name && x.lastUrl && x.lastUrl.startsWith("http"))) {
     res.json({ code: ERROR_CODES.BOOKS_FIELDS, message: ERROR_MESSAGE[ERROR_CODES.BOOKS_FIELDS] })
     return
   }
 
+  data = data.filter(x => !x.deleted)
+  
   let books = await db.books.find({ userId: req.user._id })
 
   const inserts = data.filter(x => !books.some(b => b.name === x.name))
@@ -86,7 +88,7 @@ router.post('/books/sync', wrap(async function(req, res, next) {
 
   for (let book of inserts) {
     const { name, lastUrl } = book 
-    await db.books.insert({ userId: req.user._id, name, lastUrl })
+    await db.books.insert({ userId: req.user._id, name, lastUrl, deleted: false })
   }
 
 
@@ -105,7 +107,7 @@ router.post('/books/sync', wrap(async function(req, res, next) {
 router.delete('/books', wrap(async function(req, res, next) {
   const data = req.body
   if(data.name) {
-    const del = await db.books.remove({ name: req.body.name })
+    const del = await db.books.update({ name: req.body.name }, { $set: { deleted: true }})
     res.json({ code: 200, data: del })
   } else {
     res.json({ code: 500, message: "参数错误", data: {} })
